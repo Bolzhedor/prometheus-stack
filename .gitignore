@@ -1,0 +1,20 @@
+# Docker / контейнеры
+*.log
+docker-compose.override.yml
+data/
+volumes/
+prometheus/data/
+grafana/data/
+grafana/provisioning/
+alertmanager/data/
+blackbox/data/
+
+# Временные файлы
+*~
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# Локальные настройки
+.env

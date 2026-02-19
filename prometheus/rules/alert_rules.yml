@@ -1,0 +1,120 @@
+groups:
+- name: host-basic-alerts
+  rules:
+
+  - alert: ServerDown
+    expr: up{job="node-exporter"} == 0
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "Server is down"
+      description: "Node exporter is not reachable."
+
+  - alert: HighCPUUsage
+    expr: |
+      100 - (avg by (instance) (
+        rate(node_cpu_seconds_total{mode="idle"}[2m])
+      ) * 100) > 80
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage"
+      description: "CPU usage is above 80% for more than 2 minutes."
+
+  - alert: HighMemoryUsage
+    expr: |
+      (
+        1 - (
+          node_memory_MemAvailable_bytes
+          /
+          node_memory_MemTotal_bytes
+        )
+      ) * 100 > 80
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage"
+      description: "Memory usage is above 80% for more than 2 minutes."
+
+
+  - alert: DiskSpaceLow
+    expr: |
+      (
+        node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+        /
+        node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}
+      ) * 100 < 15
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low disk space"
+      description: "Disk space is below 15% free."
+
+  - alert: DiskSpaceCritical
+    expr: |
+      (
+        node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+        /
+        node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}
+      ) * 100 < 5
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical disk space"
+      description: "Disk space is below 5% free."
+
+  - alert: SwapUsageHigh
+    expr: |
+      (
+        1 - (
+          node_memory_SwapFree_bytes
+          /
+          node_memory_SwapTotal_bytes
+        )
+      ) * 100 > 50
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High swap usage"
+      description: "Swap usage is above 50%."
+
+  - alert: SwapUsageCritical
+    expr: |
+      (
+        1 - (
+          node_memory_SwapFree_bytes
+          /
+          node_memory_SwapTotal_bytes
+        )
+      ) * 100 > 80
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical swap usage"
+      description: "Swap usage is above 80%."
+
+  - alert: ServerDown
+    expr: up{job="node-exporter"} != 1
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "Server is down"
+      description: "Node exporter is not reachable"
+
+  - alert: ServiceDown
+    expr: probe_success != 1
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "Service {{ $labels.instance }} is down"
+      description: "Blackbox probe failed"
+
