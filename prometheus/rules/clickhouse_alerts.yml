@@ -1,0 +1,66 @@
+groups:
+- name: clickhouse-alerts
+  rules:
+
+  - alert: ClickHouseInstanceDown
+    expr: up{job="clickhouse"} == 0
+    for: 1m
+    labels:
+      severity: critical
+      team: data-platform
+    annotations:
+      summary: "ClickHouse {{ $labels.instance }} DOWN"
+      description: "Нода не отвечает более 1 минуты. Проверьте процесс и сеть."
+
+  - alert: ClickHouseHighMemoryUsage
+    expr: |
+      (ClickHouseAsyncMetrics_MemoryTracking / ClickHouseAsyncMetrics_TotalMemory) > 0.90
+    for: 5m
+    labels:
+      severity: warning
+      team: data-platform
+    annotations:
+      summary: "High memory on {{ $labels.instance }}"
+      description: "Потребление памяти > 90%. Риск OOM."
+
+  - alert: ClickHouseReplicationLag
+    expr: |
+      ClickHouseMetrics_AbsoluteReplicationDelay > 300
+    for: 10m
+    labels:
+      severity: critical
+      team: data-platform
+    annotations:
+      summary: "Replication lag on {{ $labels.instance }}"
+      description: "Отставание репликации > 5 минут."
+
+  - alert: ClickHouseZooKeeperSessionLost
+    expr: ClickHouseMetrics_ZooKeeperSessionIsLost == 1
+    for: 1m
+    labels:
+      severity: critical
+      team: data-platform
+    annotations:
+      summary: "ZooKeeper session lost on {{ $labels.instance }}"
+      description: "Потеряна связь с ZooKeeper. Репликация остановлена."
+
+  - alert: ClickHouseReadOnlyReplica
+    expr: ClickHouseMetrics_ReplicaIsReadOnly == 1
+    for: 3m
+    labels:
+      severity: warning
+      team: data-platform
+    annotations:
+      summary: "Replica {{ $labels.instance }} is READONLY"
+      description: "Нода в режиме только для чтения."
+
+  - alert: ClickHouseHighQueryErrorRate
+    expr: |
+      rate(ClickHouseMetrics_FailedQuery[5m]) > 0.5
+    for: 5m
+    labels:
+      severity: warning
+      team: data-platform
+    annotations:
+      summary: "High query errors on {{ $labels.instance }}"
+      description: "Более 0.5 ошибок/сек. Проверьте system.query_log."

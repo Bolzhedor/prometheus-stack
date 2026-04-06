@@ -1,0 +1,55 @@
+groups:
+- name: manticore-alerts
+  rules:
+
+  - alert: ManticoreInstanceDown
+    expr: up{job="manticore"} == 0
+    for: 1m
+    labels:
+      severity: critical
+      team: search-platform
+    annotations:
+      summary: "Manticore {{ $labels.instance }} DOWN"
+      description: "Нода не отвечает. Проверьте searchd."
+
+  - alert: ManticoreClusterNodeMissing
+    expr: |
+      count(manticore_cluster_nodes_count) by (cluster) != 3
+    for: 2m
+    labels:
+      severity: critical
+      team: search-platform
+    annotations:
+      summary: "Manticore cluster node missing"
+      description: "Ожидалось 3 ноды, обнаружено {{ $value }}."
+
+  - alert: ManticoreReplicationLag
+    expr: manticore_replication_lag_seconds > 60
+    for: 5m
+    labels:
+      severity: warning
+      team: search-platform
+    annotations:
+      summary: "Replication lag on {{ $labels.instance }}"
+      description: "Отставание репликации > 60 сек."
+
+  - alert: ManticoreHighMemoryUsage
+    expr: manticore_memory_used_bytes > 6442450944  # 6GB
+    for: 10m
+    labels:
+      severity: warning
+      team: search-platform
+    annotations:
+      summary: "High memory on {{ $labels.instance }}"
+      description: "Память > 6GB. Проверьте индексы."
+
+  - alert: ManticoreIndexingStuck
+    expr: |
+      manticore_indexing_active == 0 and manticore_indexing_queue_size > 100
+    for: 15m
+    labels:
+      severity: warning
+      team: search-platform
+    annotations:
+      summary: "Indexing stuck on {{ $labels.instance }}"
+      description: "Очередь индексации переполнена, но нет активных задач."

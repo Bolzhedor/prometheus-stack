@@ -1,35 +1,71 @@
-version: "3.9"
-
 services:
   prometheus:
     image: prom/prometheus:v2.48.1
     container_name: prometheus
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+      - /etc/localtime:/etc/localtime:ro
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
     ports:
-      - "9090:9090"
-    restart: unless-stopped
+      - "127.0.0.1:9090:9090"
+    networks:
+      - monitoring
+      - clickhouse_net
+      - manticore_net
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   alertmanager:
     image: prom/alertmanager:v0.26.0
     container_name: alertmanager
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager-data:/alertmanager
+      - alertmanager_data:/alertmanager
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
     ports:
-      - "9093:9093"
-    restart: unless-stopped
+      - "127.0.0.1:9093:9093"
+    networks:
+      - monitoring
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   node-exporter:
     image: prom/node-exporter:v1.7.0
     container_name: node-exporter
+    restart: unless-stopped
     pid: host
+    user: "65534:65534"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -38,35 +74,103 @@ services:
       - "--path.procfs=/host/proc"
       - "--path.sysfs=/host/sys"
       - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
     ports:
-      - "9100:9100"
+      - "127.0.0.1:9100:9100"
+    networks:
+      - monitoring
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   grafana:
     image: grafana/grafana-oss:10.3.1
     container_name: grafana
-    ports:
-      - "3000:3000"
+    restart: unless-stopped
+    user: "472:472"
     volumes:
-      - grafana-data:/var/lib/grafana
+      - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_plugins:/var/lib/grafana/plugins:rw
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
       GF_USERS_ALLOW_SIGN_UP: "false"
-    restart: unless-stopped
+      GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3000}"
+      GF_SECURITY_ALLOW_EMBEDDING: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - monitoring
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   blackbox-exporter:
     image: prom/blackbox-exporter:v0.25.0
     container_name: blackbox-exporter
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
     command:
       - "--config.file=/etc/blackbox_exporter/config.yml"
     ports:
-      - "9115:9115"
-    restart: unless-stopped
+      - "127.0.0.1:9115:9115"
+    networks:
+      - monitoring
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9115/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
-  grafana-data:
-  alertmanager-data:
+  prometheus_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /data/monitoring/prometheus
+      o: bind
+  alertmanager_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /data/monitoring/alertmanager
+      o: bind
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /data/monitoring/grafana
+      o: bind
+  grafana_plugins:
+
+networks:
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  clickhouse_net:
+    external: true
+    name: clickhouse_clickhouse_net
+  manticore_net:
+    external: true
+    name: manticore-cluster_manticore_net

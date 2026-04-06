@@ -37,3 +37,31 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: blackbox-exporter:9115
+
+  - job_name: "clickhouse"
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - 'clickhouse-1:9363'
+          - 'clickhouse-2:9363'
+          - 'clickhouse-3:9363'
+        labels:
+          cluster: 'clickhouse-prod'
+          shard_group: '3shards_1replica'
+
+  - job_name: "manticore"
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - 'manticore-1:9308'
+          - 'manticore-2:9308'
+          - 'manticore-3:9308'
+        labels:
+          cluster: 'manticore-prod'
+          service: 'search'
