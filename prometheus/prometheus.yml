@@ -65,3 +65,73 @@ scrape_configs:
         labels:
           cluster: 'manticore-prod'
           service: 'search'
+
+  - job_name: "patroni"
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - "postgresql-patroni-pg1:8008"
+          - "postgresql-patroni-pg2:8008"
+          - "postgresql-patroni-pg3:8008"
+        labels:
+          cluster: "patroni-postgres"
+          service: "patroni"
+
+  - job_name: "etcd"
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - "postgresql-patroni-etcd1:2379"
+          - "postgresql-patroni-etcd2:2379"
+          - "postgresql-patroni-etcd3:2379"
+        labels:
+          cluster: "patroni-postgres"
+          service: "etcd"
+
+  - job_name: "haproxy"
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - "postgresql-patroni-haproxy:7000"
+        labels:
+          cluster: "patroni-postgres"
+          service: "haproxy"
+
+  - job_name: "k3s-api-blackbox"
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - k3s-control:6443
+        labels:
+          cluster: "k3s-lab"
+          service: "k3s-api"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: "cadvisor"
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - "cadvisor:8080"
+        labels:
+          cluster: "docker-host"
+          service: "cadvisor"

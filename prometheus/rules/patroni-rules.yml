@@ -1,0 +1,325 @@
+groups:
+  - name: patroni.core
+    interval: 15s
+    rules:
+      - alert: PatroniMetricsDown
+        expr: up{job="patroni"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: patroni
+        annotations:
+          summary: "Patroni metrics недоступны: {{ $labels.instance }}"
+          description: "Prometheus не может собрать Patroni metrics с {{ $labels.instance }} больше 30 секунд."
+
+      - alert: PatroniNoLeader
+        expr: sum(patroni_master{job="patroni"}) == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: patroni
+        annotations:
+          summary: "В Patroni-кластере нет лидера"
+          description: "Ни одна Patroni-нода не сообщает роль master. Запись в PostgreSQL, скорее всего, недоступна."
+
+      - alert: PatroniMultipleLeaders
+        expr: sum(patroni_master{job="patroni"}) > 1
+        for: 15s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: patroni
+        annotations:
+          summary: "В Patroni несколько лидеров"
+          description: "Больше одной Patroni-ноды сообщает роль master. Возможен split-brain."
+
+      - alert: PatroniReplicaMissing
+        expr: sum(patroni_replica{job="patroni"}) < 2
+        for: 1m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: patroni
+        annotations:
+          summary: "В Patroni меньше двух реплик"
+          description: "Для 3-нодового кластера ожидается 1 master и 2 replica, но живых replica меньше двух."
+
+      - alert: PatroniPostgresNotRunning
+        expr: patroni_postgres_running{job="patroni"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: patroni
+        annotations:
+          summary: "PostgreSQL не запущен под Patroni: {{ $labels.instance }}"
+          description: "Patroni сообщает, что PostgreSQL-процесс на {{ $labels.instance }} не работает."
+
+      - alert: PatroniFailoverHappened
+        expr: changes(patroni_master{job="patroni"}[5m]) > 0
+        for: 0s
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: patroni
+        annotations:
+          summary: "В Patroni произошла смена лидера"
+          description: "На {{ $labels.instance }} изменилась master-роль за последние 5 минут."
+
+      - alert: PatroniFrequentFailovers
+        expr: sum(changes(patroni_master{job="patroni"}[30m])) > 2
+        for: 0s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: patroni
+        annotations:
+          summary: "Частые failover в Patroni"
+          description: "За последние 30 минут произошло больше двух смен лидера. Кластер нестабилен."
+
+
+  - name: patroni.etcd
+    interval: 15s
+    rules:
+      - alert: EtcdMetricsDown
+        expr: up{job="etcd"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: etcd
+        annotations:
+          summary: "etcd metrics недоступны: {{ $labels.instance }}"
+          description: "Prometheus не может собрать etcd metrics с {{ $labels.instance }} больше 30 секунд."
+
+      - alert: EtcdNoLeader
+        expr: etcd_server_has_leader{job="etcd"} == 0
+        for: 15s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: etcd
+        annotations:
+          summary: "etcd не видит лидера: {{ $labels.instance }}"
+          description: "etcd сообщает отсутствие лидера. Patroni DCS может быть недоступен."
+
+      - alert: EtcdFrequentLeaderChanges
+        expr: increase(etcd_server_leader_changes_seen_total{job="etcd"}[10m]) > 3
+        for: 0s
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: etcd
+        annotations:
+          summary: "Частые перевыборы лидера etcd"
+          description: "etcd leader менялся больше 3 раз за последние 10 минут."
+
+      - alert: EtcdHighWALFsyncLatency
+        expr: histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket{job="etcd"}[5m])) > 0.25
+        for: 2m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: etcd
+        annotations:
+          summary: "Высокая latency fsync в etcd"
+          description: "99-й процентиль etcd WAL fsync latency выше 250ms."
+
+      - alert: EtcdHighBackendCommitLatency
+        expr: histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket{job="etcd"}[5m])) > 0.25
+        for: 2m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: etcd
+        annotations:
+          summary: "Высокая latency backend commit в etcd"
+          description: "99-й процентиль etcd backend commit latency выше 250ms."
+
+      - alert: EtcdFailedProposals
+        expr: increase(etcd_server_proposals_failed_total{job="etcd"}[5m]) > 0
+        for: 0s
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: etcd
+        annotations:
+          summary: "etcd failed proposals"
+          description: "За последние 5 минут в etcd появились failed proposals."
+
+      - alert: EtcdProposalBacklog
+        expr: etcd_server_proposals_pending{job="etcd"} > 100
+        for: 1m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: etcd
+        annotations:
+          summary: "Большая очередь pending proposals в etcd"
+          description: "В etcd больше 100 pending proposals на {{ $labels.instance }}."
+
+
+  - name: patroni.haproxy
+    interval: 15s
+    rules:
+      - alert: HAProxyMetricsDown
+        expr: up{job="haproxy"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: haproxy
+        annotations:
+          summary: "HAProxy metrics недоступны: {{ $labels.instance }}"
+          description: "Prometheus не может собрать HAProxy metrics с {{ $labels.instance }} больше 30 секунд."
+
+      - alert: HAProxyBackendDown
+        expr: haproxy_server_up{job="haproxy"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: haproxy
+        annotations:
+          summary: "HAProxy backend down"
+          description: "Backend {{ $labels.proxy }}/{{ $labels.server }} недоступен."
+
+      - alert: HAProxyNoWritableBackend
+        expr: sum(haproxy_server_up{job="haproxy",proxy=~".*master.*|.*primary.*|.*write.*"}) == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: haproxy
+        annotations:
+          summary: "HAProxy не видит writable PostgreSQL backend"
+          description: "Нет доступного backend-а для записи в PostgreSQL."
+
+      - alert: HAProxyNoReadableBackend
+        expr: sum(haproxy_server_up{job="haproxy",proxy=~".*replica.*|.*standby.*|.*read.*"}) == 0
+        for: 1m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: haproxy
+        annotations:
+          summary: "HAProxy не видит readable PostgreSQL backend"
+          description: "Нет доступного backend-а для чтения с PostgreSQL replica."
+
+      - alert: HAProxyConnectionErrors
+        expr: increase(haproxy_backend_connection_errors_total{job="haproxy"}[5m]) > 0
+        for: 0s
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: haproxy
+        annotations:
+          summary: "HAProxy connection errors"
+          description: "В backend {{ $labels.proxy }} появились connection errors за последние 5 минут."
+
+      - alert: HAProxyResponseErrors
+        expr: increase(haproxy_backend_response_errors_total{job="haproxy"}[5m]) > 0
+        for: 0s
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: haproxy
+        annotations:
+          summary: "HAProxy response errors"
+          description: "В backend {{ $labels.proxy }} появились response errors за последние 5 минут."
+
+
+  - name: patroni.node
+    interval: 15s
+    rules:
+      - alert: NodeExporterDown
+        expr: up{job="node-exporter"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: node
+        annotations:
+          summary: "node_exporter недоступен: {{ $labels.instance }}"
+          description: "Prometheus не может собрать node metrics с {{ $labels.instance }} больше 30 секунд."
+
+      - alert: HostHighCPUUsage
+        expr: |
+          100 - (
+            avg by (instance) (
+              rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[2m])
+            ) * 100
+          ) > 85
+        for: 3m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: node
+        annotations:
+          summary: "Высокая CPU usage: {{ $labels.instance }}"
+          description: "CPU usage выше 85% больше 3 минут."
+
+      - alert: HostHighMemoryUsage
+        expr: |
+          (
+            1 -
+            node_memory_MemAvailable_bytes{job="node-exporter"}
+            /
+            node_memory_MemTotal_bytes{job="node-exporter"}
+          ) > 0.9
+        for: 3m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: node
+        annotations:
+          summary: "Высокая RAM usage: {{ $labels.instance }}"
+          description: "RAM usage выше 90% больше 3 минут."
+
+      - alert: HostDiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs"}
+            /
+            node_filesystem_size_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs"}
+          ) < 0.15
+        for: 2m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: node
+        annotations:
+          summary: "Мало места на диске: {{ $labels.instance }}"
+          description: "На {{ $labels.mountpoint }} осталось меньше 15% свободного места."
+
+      - alert: HostDiskSpaceCritical
+        expr: |
+          (
+            node_filesystem_avail_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs"}
+            /
+            node_filesystem_size_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs"}
+          ) < 0.05
+        for: 30s
+        labels:
+          severity: critical
+          cluster: patroni-postgres
+          service: node
+        annotations:
+          summary: "Критически мало места на диске: {{ $labels.instance }}"
+          description: "На {{ $labels.mountpoint }} осталось меньше 5% свободного места."
+
+      - alert: HostHighIOWait
+        expr: |
+          avg by (instance) (
+            rate(node_cpu_seconds_total{job="node-exporter",mode="iowait"}[2m])
+          ) > 0.15
+        for: 2m
+        labels:
+          severity: warning
+          cluster: patroni-postgres
+          service: node
+        annotations:
+          summary: "Высокий iowait: {{ $labels.instance }}"
+          description: "CPU iowait выше 15%. Для PostgreSQL/etcd это может быть болезненно."

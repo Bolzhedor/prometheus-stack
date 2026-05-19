@@ -1,0 +1,388 @@
+groups:
+  - name: k3s.api
+    interval: 15s
+    rules:
+      - alert: K3SApiDown
+        expr: probe_success{job="k3s-api-blackbox"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: k3s-api
+        annotations:
+          summary: "K3S API недоступен"
+          description: "Kubernetes API на {{ $labels.instance }} не отвечает по TCP больше 30 секунд."
+
+      - alert: K3SApiProbeSlow
+        expr: probe_duration_seconds{job="k3s-api-blackbox"} > 1
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: k3s-api
+        annotations:
+          summary: "K3S API отвечает медленно"
+          description: "Проверка {{ $labels.instance }} занимает больше 1 секунды больше 2 минут."
+
+
+  - name: k3s.docker.containers
+    interval: 15s
+    rules:
+      - alert: K3SControlContainerMissing
+        expr: absent(container_last_seen{name=~".*k3s-control.*"})
+        for: 30s
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "Контейнер k3s-control не виден"
+          description: "cAdvisor не видит контейнер k3s-control больше 30 секунд."
+
+      - alert: K3SAgent1ContainerMissing
+        expr: absent(container_last_seen{name=~".*k3s-agent-1.*"})
+        for: 30s
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "Контейнер k3s-agent-1 не виден"
+          description: "cAdvisor не видит контейнер k3s-agent-1 больше 30 секунд."
+
+      - alert: K3SAgent2ContainerMissing
+        expr: absent(container_last_seen{name=~".*k3s-agent-2.*"})
+        for: 30s
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "Контейнер k3s-agent-2 не виден"
+          description: "cAdvisor не видит контейнер k3s-agent-2 больше 30 секунд."
+
+      - alert: K3SContainerHighCPU
+        expr: |
+          sum by (name) (
+            rate(container_cpu_usage_seconds_total{name=~".*k3s-(control|agent-1|agent-2).*"}[2m])
+          ) > 1
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "Высокая CPU usage у k3s-контейнера: {{ $labels.name }}"
+          description: "Контейнер использует больше 1 CPU core больше 2 минут."
+
+      - alert: K3SContainerVeryHighCPU
+        expr: |
+          sum by (name) (
+            rate(container_cpu_usage_seconds_total{name=~".*k3s-(control|agent-1|agent-2).*"}[2m])
+          ) > 2
+        for: 1m
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "Очень высокая CPU usage у k3s-контейнера: {{ $labels.name }}"
+          description: "Контейнер использует больше 2 CPU cores больше 1 минуты."
+
+      - alert: K3SContainerHighMemory
+        expr: |
+          container_memory_working_set_bytes{name=~".*k3s-(control|agent-1|agent-2).*"} > 1073741824
+        for: 3m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "Высокая RAM usage у k3s-контейнера: {{ $labels.name }}"
+          description: "Контейнер использует больше 1 GB RAM больше 3 минут. Сейчас: {{ $value }} bytes."
+
+      - alert: K3SContainerMemoryCritical
+        expr: |
+          container_memory_working_set_bytes{name=~".*k3s-(control|agent-1|agent-2).*"} > 2147483648
+        for: 1m
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "Критическая RAM usage у k3s-контейнера: {{ $labels.name }}"
+          description: "Контейнер использует больше 2 GB RAM больше 1 минуты. Сейчас: {{ $value }} bytes."
+
+      - alert: K3SContainerOOMKilled
+        expr: |
+          increase(container_oom_events_total{name=~".*k3s-(control|agent-1|agent-2).*"}[10m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "OOM kill у k3s-контейнера: {{ $labels.name }}"
+          description: "Контейнер был убит по OOM за последние 10 минут."
+
+      - alert: K3SContainerRestarted
+        expr: |
+          increase(container_start_time_seconds{name=~".*k3s-(control|agent-1|agent-2).*"}[10m]) > 0
+        for: 0s
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: docker
+        annotations:
+          summary: "k3s-контейнер перезапускался: {{ $labels.name }}"
+          description: "Контейнер {{ $labels.name }} менял start_time за последние 10 минут."
+
+
+  - name: k3s.host.resources
+    interval: 15s
+    rules:
+      - alert: K3SHostHighCPU
+        expr: |
+          100 - (
+            avg by (instance) (
+              rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[2m])
+            ) * 100
+          ) > 85
+        for: 3m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: node
+        annotations:
+          summary: "Высокая CPU usage на Docker-хосте"
+          description: "CPU usage выше 85% больше 3 минут на {{ $labels.instance }}."
+
+      - alert: K3SHostHighMemory
+        expr: |
+          (
+            1 -
+            node_memory_MemAvailable_bytes{job="node-exporter"}
+            /
+            node_memory_MemTotal_bytes{job="node-exporter"}
+          ) > 0.9
+        for: 3m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: node
+        annotations:
+          summary: "Высокая RAM usage на Docker-хосте"
+          description: "RAM usage выше 90% больше 3 минут на {{ $labels.instance }}."
+
+      - alert: K3SHostDiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs"}
+            /
+            node_filesystem_size_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs"}
+          ) < 0.15
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: node
+        annotations:
+          summary: "Мало места на Docker-хосте"
+          description: "На {{ $labels.mountpoint }} осталось меньше 15% свободного места."
+
+      - alert: K3SHostDiskSpaceCritical
+        expr: |
+          (
+            node_filesystem_avail_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs"}
+            /
+            node_filesystem_size_bytes{job="node-exporter",fstype!~"tmpfs|overlay|squashfs"}
+          ) < 0.05
+        for: 30s
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: node
+        annotations:
+          summary: "Критически мало места на Docker-хосте"
+          description: "На {{ $labels.mountpoint }} осталось меньше 5% свободного места."
+
+      - alert: K3SHostHighIOWait
+        expr: |
+          avg by (instance) (
+            rate(node_cpu_seconds_total{job="node-exporter",mode="iowait"}[2m])
+          ) > 0.15
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: node
+        annotations:
+          summary: "Высокий iowait на Docker-хосте"
+          description: "CPU iowait выше 15% больше 2 минут на {{ $labels.instance }}."
+
+
+  - name: k3s.kubernetes.nodes
+    interval: 15s
+    rules:
+      - alert: K3SNodeNotReady
+        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "K3S node NotReady: {{ $labels.node }}"
+          description: "Kubernetes-нода {{ $labels.node }} находится не в Ready-состоянии больше 1 минуты."
+
+      - alert: K3SNodeUnschedulable
+        expr: kube_node_spec_unschedulable == 1
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "K3S node unschedulable: {{ $labels.node }}"
+          description: "На ноду {{ $labels.node }} нельзя планировать pod-ы больше 2 минут."
+
+      - alert: K3SNodeMemoryPressure
+        expr: kube_node_status_condition{condition="MemoryPressure",status="true"} == 1
+        for: 1m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "MemoryPressure на K3S node: {{ $labels.node }}"
+          description: "Kubernetes сообщает MemoryPressure на ноде {{ $labels.node }}."
+
+      - alert: K3SNodeDiskPressure
+        expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+        for: 1m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "DiskPressure на K3S node: {{ $labels.node }}"
+          description: "Kubernetes сообщает DiskPressure на ноде {{ $labels.node }}."
+
+      - alert: K3SNodePIDPressure
+        expr: kube_node_status_condition{condition="PIDPressure",status="true"} == 1
+        for: 1m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "PIDPressure на K3S node: {{ $labels.node }}"
+          description: "Kubernetes сообщает PIDPressure на ноде {{ $labels.node }}."
+
+
+  - name: k3s.kubernetes.workloads
+    interval: 15s
+    rules:
+      - alert: K3SPodCrashLooping
+        expr: |
+          increase(kube_pod_container_status_restarts_total[5m]) > 3
+        for: 0s
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "Pod часто рестартует: {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Контейнер {{ $labels.container }} рестартовал больше 3 раз за последние 5 минут."
+
+      - alert: K3SPodNotRunning
+        expr: |
+          kube_pod_status_phase{phase=~"Failed|Unknown|Pending"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "Pod не Running: {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} находится в фазе {{ $labels.phase }} больше 2 минут."
+
+      - alert: K3SDeploymentReplicasUnavailable
+        expr: |
+          kube_deployment_status_replicas_available
+          <
+          kube_deployment_spec_replicas
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "Deployment имеет недоступные реплики: {{ $labels.namespace }}/{{ $labels.deployment }}"
+          description: "В Deployment {{ $labels.namespace }}/{{ $labels.deployment }} доступно меньше реплик, чем требуется."
+
+      - alert: K3SStatefulSetReplicasUnavailable
+        expr: |
+          kube_statefulset_status_replicas_ready
+          <
+          kube_statefulset_replicas
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "StatefulSet имеет недоступные реплики: {{ $labels.namespace }}/{{ $labels.statefulset }}"
+          description: "В StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} ready-реплик меньше, чем требуется."
+
+      - alert: K3SDaemonSetUnavailable
+        expr: |
+          kube_daemonset_status_number_unavailable > 0
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "DaemonSet имеет недоступные pod-ы: {{ $labels.namespace }}/{{ $labels.daemonset }}"
+          description: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} имеет unavailable pod-ы."
+
+      - alert: K3SJobFailed
+        expr: |
+          kube_job_status_failed > 0
+        for: 0s
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "Kubernetes Job завершился с ошибкой: {{ $labels.namespace }}/{{ $labels.job_name }}"
+          description: "Job {{ $labels.namespace }}/{{ $labels.job_name }} имеет failed pod-ы."
+
+
+  - name: k3s.kubernetes.storage
+    interval: 15s
+    rules:
+      - alert: K3SPVCPending
+        expr: |
+          kube_persistentvolumeclaim_status_phase{phase="Pending"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "PVC Pending: {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}"
+          description: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} находится в Pending больше 2 минут."
+
+      - alert: K3SPVCLost
+        expr: |
+          kube_persistentvolumeclaim_status_phase{phase="Lost"} == 1
+        for: 30s
+        labels:
+          severity: critical
+          cluster: k3s-lab
+          service: kubernetes
+        annotations:
+          summary: "PVC Lost: {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}"
+          description: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} находится в Lost."
